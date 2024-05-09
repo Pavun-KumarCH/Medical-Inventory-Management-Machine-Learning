@@ -69,6 +69,7 @@ SubCat1:     	Subcategory (condition) to the category of drugs
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 from sqlalchemy import create_engine
 from feature_engine.outliers import Winsorizer
 
@@ -76,6 +77,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, LabelEncoder
 from sklearn.compose import ColumnTransformer
+
+from sklearn.model_selection import train_test_split
 
 # Load the data
 data = pd.read_excel("/Users/pavankumar/Projects/Medical Inventory Management/Datasets/Medical Inventory Optimaization Dataset.xlsx")
@@ -94,18 +97,138 @@ data.to_sql("Medical Inventory", con = engine, if_exists = "replace", chunksize 
 sql = 'select * from `datasets`.`Medical Inventory`'
 data = pd.read_sql_query(sql, con = engine)
 
+
+#*************** Data Preparation ***********************
+
+
+# Type casting 
+data["Patient_ID"] = data["Patient_ID"].astype('str')
+data["Final_Sales"] = data["Final_Sales"].astype('float32')
+data["Final_Cost"] = data["Final_Cost"].astype('float32')
+
 # Checking for any null values 
-data.isna().sum()
+data.isna().sum() 
 
-# Categories in each column
-columns = data.columns
+# We see there are few missimg class values
+# Handling Missing values
+for col in ['Formulation','DrugName','SubCat','SubCat1']:
+    print(data[col].unique(),"\n")
+    print(data[col].value_counts().unique().size,'\n')
 
-for i in columns:
-    classes = data[i].value_counts()
-    print("\n",classes)
-    
+data.reset_index(drop = True, inplace = True)
+
+# Imputing missing values based on mode of groups   
+group_cols = ['Typeofsales', 'Specialisation', 'Dept']
+
+for col in ['Formulation', 'DrugName', 'SubCat', 'SubCat1']:
+    # Reset the index before applying group-wise mode
+    data[col] = data.groupby(group_cols)[col].transform(lambda x: x.fillna(x.mode().iloc[0]) if not x.mode().empty else x)
+data.isna().sum() 
+
+# we still see few missing values
+data.dropna(inplace = True)
+data.reset_index(drop = True, inplace = True)
+data.isna().sum() 
+
+# Handling Duplicates
+duplicates = data.duplicated()
+sum(duplicates)
+
+# Removing duplicated
+data = data.drop_duplicates()
+duplicates = data.duplicated()
+sum(duplicates)
+
+## Data Manupulation
+   
+# Assuming 'Date' is the column containing dates in your DataFrame
+data['Dateofbill'] = pd.to_datetime(data['Dateofbill'], format='mixed', dayfirst= True)
+
+data = data.sort_values(by = 'Dateofbill', ascending  = True )
+
+# Speifying columns Final cost and final sale  to round 
+
+
+# round the values in the column to zero
+data['Final_Cost'] = data['Final_Cost'].apply(lambda x: round(x))
+data['Final_Sales'] = data['Final_Sales'].apply(lambda x: round(x))
+
+
+data.head(10)
+
+data.describe()
+
+
 # Drop Irrelavent columns
-data.drop(['Patient_ID','RtnMRP','Dateofbill','ReturnQuantity'], axis = True, inplace = True)
+data.drop(['Patient_ID','ReturnQuantity'], axis = True, inplace = True)
+
+# Segregate numeric and categorical cloumns
+numeric_features = data.select_dtypes(exclude = ['object','datetime64']).columns
+numeric_features
+
+categorical_features = data.select_dtypes(include =['object']).columns
+categorical_features
+
+
+# FIRST MOMENT BUSSINESS DECESION / Measure of Central Tendency
+
+# Mean
+data[numeric_features].mean()
+
+# Median
+data[numeric_features].median()
+
+# Mode
+data.mode()
+
+# Second Moment Decesion / Measure of Dispersion
+
+# Varince
+data[numeric_features].var()
+
+# Standard Deviation
+data[numeric_features].std()
+
+# 3rd Moment Decesion
+# Skewness
+data[numeric_features].skew()
+
+# 4 Moment Decesion 
+#Kurtosis
+data[numeric_features].kurt()
+
+#EDA 
+data.Quantity.max()
+plt.hist(data.Quantity,color = 'orange', bins = 20, alpha =1)
+plt.xlim(0, 160)
+
+data.Final_Cost.max()
+plt.hist(data.Final_Cost,color = 'orange', bins = 500, alpha = 1)
+plt.xlim(0, 3500)
+
+
+data.Final_Sales.max()
+plt.hist(data.Final_Sales,color = 'orange', bins = 500, alpha = 1)
+plt.xlim(0, 4000)
+
+
+data.RtnMRP.max()
+plt.hist(data.RtnMRP,color = 'orange', bins = 500, alpha = 1)
+plt.xlim(0, 1000)
+
+
+# Convert date Format to Month
+data['Dateofbill'] = data['Dateofbill'].dt.strftime("%b")
+
+data.head()
+
+# Pivot the DataFeame based on SubCat of Drugs
+data_pivoted = data.pivot_table(index = 'SubCat', columns = 'Dateofbill', values = "Quantity")
+
+
+
+
+
 
 # Segregate Input variables with Target variable
 X = data.iloc[:,1:]
@@ -170,3 +293,30 @@ processed = process_pipeline.fit(X)
 data_clean = pd.DataFrame(processed.transform(X), columns = processed.get_feature_names_out())
 
 
+data_clean.head()
+
+# Graphical Representation
+sns.pairplot(data)
+plt.show()
+
+data_corr = data_clean.corr()
+
+# Heat map
+#sns.heatmap(data_corr, annot = True, cmap= 'tab20b')
+
+# Here we have output data with imbalance classes so we are going to use stratify to split the data as equal propotion
+Y.value_counts() / len(Y)
+
+# Split the data_clean into train and test
+x_train, x_test, y_train , y_test = train_test_split(X,Y, test_size = 0.2, stratify = Y, random_state = 0)
+
+x_train.shape
+y_train.shape
+x_test.shape
+y_test.shape
+
+y_train.value_counts() / len(y_train)
+y_test.value_counts() / len(y_test)
+
+# Model Building (Classification Model)
+# Navie Bayses Model 
